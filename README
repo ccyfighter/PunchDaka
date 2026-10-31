@@ -1,0 +1,170 @@
+====================================================================
+打卡（PunchDaka）· Android 14 应用使用统计 + 定时提醒
+====================================================================
+
+【这是什么】
+一个纯本地、零联网的 Android 应用：
+  1) 统计你手动指定的 App 在"打卡日"内的打开次数与每次停留时长（含疑似闪退识别）
+  2) 类闹钟的定时提醒（全屏响铃界面，右滑关闭并回到手机主页面）
+
+【重要：Android 14 的技术限制（必读）】
+Android 14 起，Google 已禁止第三方 App 通过 UsageStatsManager 读取其他应用的
+使用情况（"使用情况访问权限"对第三方 App 基本失效，返回空或仅自身数据）。
+因此本项目的采集引擎使用 **AccessibilityService（无障碍服务）** 监听窗口切换：
+  - 只读取"当前前台应用的包名"和时间戳
+  - 不读取窗口内容（canRetrieveWindowContent=false）
+  - 不联网、不上传、数据只存在本机 SQLite
+这是 Android 14+ 上第三方 App 唯一可行且不 root 的方案。
+无障碍服务需要你在系统设置里手动开启一次（见下方"首次使用步骤"）。
+
+====================================================================
+【一、目录结构：txt 怎么变成仓库文件】
+====================================================================
+本文件夹已经按"真实工程的目录结构"摆好了每一份 txt，例如：
+
+  打卡/app/src/main/java/com/daka/punch/ui/MainActivity.kt.txt
+      -> 仓库里就是  app/src/main/java/com/daka/punch/ui/MainActivity.kt
+
+即：**目录完全不用动，只把文件名末尾的 .txt 去掉**。
+（仓库根目录 = 你 GitHub 仓库的根目录，也就是 app/ 与 .github/ 所在那一层）
+
+⚠⚠ 硬性规则（踩过一次坑，务必遵守）⚠⚠
+  1. **所有 XML 文件的第一行必须是**
+         <?xml version="1.0" encoding="utf-8"?>
+     前面不能有任何注释、空行、空格，否则 AAPT 直接报
+     "The processing instruction target matching [xX][mM][lL] is not allowed"。
+     涉及 11 个文件：AndroidManifest.xml、res/values/{strings,themes}.xml、
+     res/drawable/*.xml、res/mipmap-anydpi-v26/*.xml、res/xml/*.xml
+  2. **.github/workflows/build.yml 第一行必须是** `name: Build APK`，
+     不要带注释（YAML 对缩进和重复键零容忍）。
+  3. 编辑旧文件时 Ctrl+A 全选删除再粘贴，别让新旧内容混在一起。
+  （Kotlin 文件顶部的 // 注释、properties 里的 # 注释是安全的，不用管。）
+
+完整清单（左边 = 本文件夹里的路径，右边 = 仓库里的路径）：
+
+根目录
+  README.txt                        -> README.md
+  .gitignore.txt                    -> .gitignore
+  settings.gradle.kts.txt           -> settings.gradle.kts
+  build.gradle.kts.txt              -> build.gradle.kts
+  gradle.properties.txt             -> gradle.properties
+  gradle/wrapper/gradle-wrapper.properties.txt
+                                    -> gradle/wrapper/gradle-wrapper.properties
+  .github/workflows/build.yml.txt   -> .github/workflows/build.yml
+
+app 模块
+  app/build.gradle.kts.txt          -> app/build.gradle.kts
+  app/src/main/AndroidManifest.xml.txt
+                                    -> app/src/main/AndroidManifest.xml
+
+资源
+  app/src/main/res/values/themes.xml.txt        -> res/values/themes.xml
+  app/src/main/res/values/strings.xml.txt       -> res/values/strings.xml
+  app/src/main/res/xml/accessibility_service_config.xml.txt
+                                    -> res/xml/accessibility_service_config.xml
+  app/src/main/res/xml/data_extraction_rules.xml.txt
+                                    -> res/xml/data_extraction_rules.xml（禁止备份带走数据）
+  app/src/main/res/drawable/ic_launcher_background.xml.txt
+                                    -> 图标渐变背景
+  app/src/main/res/drawable/ic_launcher_foreground.xml.txt
+                                    -> 图标前景（开口环 + 对勾）
+  app/src/main/res/drawable/ic_launcher_monochrome.xml.txt
+                                    -> Android 13+ 主题图标
+  app/src/main/res/drawable/ic_stat_punch.xml.txt
+                                    -> 通知栏小图标（单色白）
+  app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml.txt
+  app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml.txt
+
+Kotlin 源码（app/src/main/java/com/daka/punch/ 下）
+  PunchApp.kt.txt                   -> 应用入口，初始化数据库与通知渠道
+  data/Models.kt.txt                -> 数据模型
+  data/Prefs.kt.txt                 -> 本地设置（日切时刻、闪退阈值等）
+  data/DbHelper.kt.txt              -> SQLite 建表
+  data/Repository.kt.txt            -> 全部读写逻辑
+  util/TimeUtils.kt.txt             -> 打卡日计算、时间格式化
+  util/AppInfos.kt.txt              -> 已安装应用列表 / 桌面包名识别
+  service/PunchAccessibilityService.kt.txt  -> 采集引擎（核心）
+  reminder/AlarmScheduler.kt.txt    -> 精确闹钟排程
+  reminder/Notifier.kt.txt          -> 通知渠道与全屏提醒
+  reminder/ReminderReceiver.kt.txt  -> 到点广播 + 开机恢复
+  reminder/RingingActivity.kt.txt   -> 全屏响铃页（右滑关闭回主屏）
+  ui/theme/Theme.kt.txt             -> Material3 主题（支持动态取色）
+  ui/MainActivity.kt.txt            -> 主界面 + 底部导航
+  ui/screens/HomeScreen.kt.txt      -> 统计页
+  ui/screens/AppsScreen.kt.txt      -> 选择要统计的应用
+  ui/screens/ReminderScreen.kt.txt  -> 提醒列表与编辑
+  ui/screens/SettingsScreen.kt.txt  -> 权限引导与参数
+
+【可选】一键脚本（推荐）：
+  在本文件夹里用 PowerShell 运行 "一键生成仓库结构.ps1"，
+  会自动生成 PunchDakaRepo/ 完整真实工程（所有文件已改好名），
+  你直接 git push 这个目录即可，省去手工复制。
+  注意：Windows 若禁止运行脚本，先执行一次
+        Set-ExecutionPolicy -Scope Process Bypass
+
+====================================================================
+【二、GitHub 建库与构建步骤】
+====================================================================
+1. GitHub 新建空仓库（例如 PunchDaka），不要勾选 README / .gitignore。
+2. 按上面清单把文件上传。
+   ⚠ 粘贴 workflow 文件时注意：
+   - .github/workflows/build.yml 的**第一行必须是 name: Build APK**，
+     不要带任何注释行（YAML 对缩进和重复键极其敏感，粘错一行就
+     报 "Invalid workflow file"）。
+   - 编辑旧文件时务必 Ctrl+A 全选删除后再粘贴，否则会新旧混在一起。
+   - 建议做法：先在仓库里删掉旧的 build.yml，再 Add file -> Create new file
+     重新建一个干净的。
+
+注意：GitHub 网页的"拖放上传"**会忽略以点开头的目录和文件**，
+   也就是 .github/ 和 .gitignore 很可能会丢（表现就是 Actions 页签里没有工作流）。
+   解决办法二选一：
+   A. 用 git 命令行 / GitHub Desktop 推送（推荐，一劳永逸）；
+   B. 网页上 Add file -> Create new file，文件名框里直接手打
+      ".github/workflows/build.yml"，GitHub 会自动创建这两层目录。
+   上传后请在仓库首页确认一共有 37 个文件（AndroidManifest + 18 个 kt
+   + 资源 + gradle 配置等），少一个都会构建失败。
+3. 上传完成后进入 Actions 页签，点 "Build APK" -> Run workflow 手动触发。
+4. 构建成功后在运行记录底部 Artifacts 里下载 punch-daka-debug，
+   解压得到 app-debug.apk，传到手机安装。
+
+注意：GitHub Action **不使用 gradlew**（gradle-wrapper.jar 是二进制文件，
+没法放进 txt），Action 里会直接安装 Gradle 8.9 执行构建。
+所以仓库里没有 gradle/wrapper/gradle-wrapper.jar 是正常的，不影响构建。
+
+版本：AGP 8.7.3 / Kotlin 2.0.21 / Compose BOM 2024.10.01 /
+      compileSdk 35、minSdk 34、targetSdk 34、JDK 17
+
+====================================================================
+【三、首次使用步骤（手机上）】
+====================================================================
+1. 安装 APK，打开"打卡"。
+2. 设置页 -> 无障碍服务 -> 去开启：
+   系统"设置 > 无障碍 > 已下载的服务"里找到"打卡·使用统计"，打开开关并确认。
+   （这是统计功能的前提，不开就采集不到任何数据）
+3. 设置页 -> 通知权限 / 精确闹钟 / 全屏通知 / 电池优化，逐个点开授权。
+   其中"全屏通知"最关键：Android 14 默认不授予第三方应用全屏通知，
+   不开的话提醒只会是一条普通通知，点击才会进入响铃界面。
+4. "应用"页勾选你要监控的 App（可搜索）。
+5. "提醒"页添加提醒时间、标签、重复日。
+
+====================================================================
+【四、隐私说明】
+====================================================================
+- AndroidManifest.xml 中**没有任何** INTERNET / ACCESS_NETWORK_STATE 权限，
+  APK 在运行期无法联网，物理上不存在数据外传。
+- 无障碍服务只读取前台应用包名，不读取窗口内容（canRetrieveWindowContent=false）。
+- 所有统计与提醒数据存在本机私有数据库（/data/data/com.daka.punch），
+  其它应用无法读取，卸载即彻底消失；已禁止云备份与换机转移。
+- QUERY_ALL_PACKAGES 仅用于在本地列举已安装应用供你勾选（不上传、不比对）。
+- 提醒铃声用系统自带的 ToneGenerator 合成，不读取任何音频文件。
+
+====================================================================
+【五、已知边界】
+====================================================================
+- "疑似闪退"是启发式判断：某次打开持续时间 < 阈值（默认 1.5 秒）且随后
+  回到桌面/上一个应用，就标记为疑似闪退。真正的崩溃日志系统不给第三方读，
+  所以这是工程上能做到的最好近似，请在设置页调阈值（0.5~5 秒）。
+- 手机厂商的杀后台策略可能让无障碍服务被回收。建议在系统"设置 > 应用 >
+  打卡 > 电池"里设为"无限制/允许后台运行"，并在本应用设置页关闭电池优化。
+- 若某次统计缺失，多半是服务被杀。重新打开一次本应用即可拉活。
+- 跨打卡日（如凌晨 4 点）的连续使用，整段时长计入开始时刻所属的那一天。

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/accessibility_description"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
+    android:canRetrieveWindowContent="false"
+    android:canRequestTouchExplorationMode="false"
+    android:canPerformGestures="false"
+    android:canRequestFilterKeyEvents="false"
+    android:notificationTimeout="80"
+    android:settingsActivity="com.daka.punch.ui.MainActivity"
+    android:summary="本地统计应用打开次数与时长" />

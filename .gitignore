@@ -1,0 +1,15 @@
+# 目标路径: .gitignore
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+app/build
+app/release
+app/build/outputs
+gradle/wrapper/gradle-wrapper.jar

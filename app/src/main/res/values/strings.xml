@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">打卡</string>
+
+    <string name="accessibility_service_label">打卡·使用统计</string>
+    <string name="accessibility_description">
+        用于在本地统计你勾选的应用的打开次数与每次使用时长（含疑似闪退识别），
+        以便生成每日打卡记录。本服务只读取当前前台应用的名称与切换时间，
+        不读取屏幕内容、不上传任何数据、不联网。
+    </string>
+
+    <string name="tab_home">统计</string>
+    <string name="tab_apps">应用</string>
+    <string name="tab_reminder">提醒</string>
+    <string name="tab_settings">设置</string>
+
+    <string name="notification_channel_reminder">打卡提醒</string>
+    <string name="notification_channel_status">运行状态</string>
+</resources>
