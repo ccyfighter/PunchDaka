@@ -1,4 +1,6 @@
 // 目标路径: app/src/main/java/com/daka/punch/ui/screens/ReminderScreen.kt
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.daka.punch.ui.screens
 
 import android.app.TimePickerDialog
