@@ -15,8 +15,8 @@ android {
         // 最低 & 目标均为 Android 14（仅支持 14 及以上）
         minSdk = 34
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
 
     buildTypes {
