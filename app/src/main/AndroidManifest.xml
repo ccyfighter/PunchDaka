@@ -11,8 +11,25 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
+
+    <!-- 读取设备上"已安装应用列表"：只在本地展示与勾选，不上传、不联网 -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+    <!-- 小米（MIUI / HyperOS）在原生之外额外加的「获取应用列表」权限 -->
+    <uses-permission android:name="com.android.permission.GET_INSTALLED_APPS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- 软件包可见性声明：Android 11+ 不声明这一块，queryIntentActivities 只能看到很少的应用 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+    </queries>
 
     <application
         android:name=".PunchApp"
