@@ -37,6 +37,15 @@ data class DaySummary(
     val appCount: Int
 )
 
+/** 从系统使用记录导入的一行原始数据 */
+data class ImportRow(
+    val pkg: String,
+    val startMs: Long,
+    val endMs: Long,
+    val crash: Boolean,
+    val reason: String
+)
+
 /** 定时提醒 */
 data class Reminder(
     val id: Long = 0,
