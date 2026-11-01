@@ -5,6 +5,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
+import com.daka.punch.util.TimeUtils
 import java.util.Calendar
 
 /** 全部数据读写入口（纯本地 SQLite） */
@@ -94,6 +95,7 @@ object Repository {
             put("day", day)
             put("crash", 0)
             put("reason", "")
+            put("source", 0)
         }
         val id = db.insert("sessions", null, cv)
         touch()
@@ -116,6 +118,41 @@ object Repository {
             .use { c ->
                 return if (c.moveToFirst()) c.getLong(0) else 0L
             }
+    }
+
+    /**
+     * 用系统使用记录覆盖 [fromMs, toMs] 区间的数据。
+     * 只删除 source=1 的旧记录后重插，因此是幂等的，重复调用不会产生重复数据；
+     * 无障碍模式产生的记录（source=0）不会被影响。
+     */
+    fun replaceImported(fromMs: Long, toMs: Long, rows: List<ImportRow>) {
+        val wdb = db
+        wdb.beginTransaction()
+        try {
+            wdb.delete(
+                "sessions",
+                "source=1 AND start_ms>=? AND start_ms<=?",
+                arrayOf(fromMs.toString(), toMs.toString())
+            )
+            for (r in rows) {
+                if (r.endMs <= r.startMs) continue
+                val cv = ContentValues().apply {
+                    put("pkg", r.pkg)
+                    put("start_ms", r.startMs)
+                    put("end_ms", r.endMs)
+                    put("duration_ms", r.endMs - r.startMs)
+                    put("day", TimeUtils.dayKey(r.startMs, Prefs.dayStartHour))
+                    put("crash", if (r.crash) 1 else 0)
+                    put("reason", r.reason)
+                    put("source", 1)
+                }
+                wdb.insert("sessions", null, cv)
+            }
+            wdb.setTransactionSuccessful()
+        } finally {
+            wdb.endTransaction()
+        }
+        touch()
     }
 
     /** 服务重启 / 开机时，把"仍在进行中"的记录按当前时间收尾 */
@@ -193,18 +230,34 @@ object Repository {
         return DaySummary(count, total, crash, dayStats(day).size)
     }
 
-    /** 该打卡日内每小时的使用总时长（毫秒数组，长度 24，下标 = 0~23 点） */
+    /**
+     * 该打卡日内每小时的使用总时长（毫秒数组，长度 24，下标 = 0~23 点）。
+     * 跨越整点的一次使用会被拆分到对应的每个小时，避免整段时长都被算在开始那个小时里。
+     */
     fun hourlyOfDay(day: String): LongArray {
         val arr = LongArray(24)
+        val limit = TimeUtils.dayEndMs(day, Prefs.dayStartHour)
         db.query(
             "sessions", arrayOf("start_ms", "duration_ms"),
             "day=? AND end_ms<>-1", arrayOf(day), null, null, null
         ).use { c ->
             val cal = Calendar.getInstance()
             while (c.moveToNext()) {
-                cal.timeInMillis = c.getLong(0)
-                val h = cal.get(Calendar.HOUR_OF_DAY)
-                arr[h] += c.getLong(1)
+                var cur = c.getLong(0)
+                var remain = c.getLong(1)
+                while (remain > 0L && cur <= limit) {
+                    cal.timeInMillis = cur
+                    val hour = cal.get(Calendar.HOUR_OF_DAY)
+                    cal.set(Calendar.MINUTE, 0)
+                    cal.set(Calendar.SECOND, 0)
+                    cal.set(Calendar.MILLISECOND, 0)
+                    cal.add(Calendar.HOUR_OF_DAY, 1)
+                    val boundary = cal.timeInMillis
+                    val take = if (remain > boundary - cur) boundary - cur else remain
+                    arr[hour] += take
+                    remain -= take
+                    cur += take
+                }
             }
         }
         return arr
