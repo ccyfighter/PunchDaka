@@ -7,7 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 
 /** 本机私有数据库（不备份、不上传、不联网） */
 class DbHelper(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "punch_daka.db", null, 1) {
+    SQLiteOpenHelper(context.applicationContext, "punch_daka.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -29,7 +29,8 @@ class DbHelper(context: Context) :
                 duration_ms INTEGER NOT NULL DEFAULT 0,
                 day      TEXT NOT NULL,
                 crash    INTEGER NOT NULL DEFAULT 0,
-                reason   TEXT NOT NULL DEFAULT ''
+                reason   TEXT NOT NULL DEFAULT '',
+                source   INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
@@ -50,6 +51,9 @@ class DbHelper(context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // 首个版本，暂无迁移
+        if (oldVersion < 2) {
+            // v2：新增 source 列（0=无障碍实时记录，1=系统使用记录拉取）
+            db.execSQL("ALTER TABLE sessions ADD COLUMN source INTEGER NOT NULL DEFAULT 0")
+        }
     }
 }
