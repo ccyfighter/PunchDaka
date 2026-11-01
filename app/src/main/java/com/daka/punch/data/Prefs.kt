@@ -55,4 +55,31 @@ object Prefs {
     var ringSeconds: Int
         get() = sp.getInt("ring_seconds", 60)
         set(value) = sp.edit().putInt("ring_seconds", value).apply()
+
+    // ------------------------------------------------------------------
+    // 采集方式
+    // ------------------------------------------------------------------
+
+    const val MODE_USAGE = 0         // 系统使用记录拉取（推荐：零后台、零耗电）
+    const val MODE_ACCESSIBILITY = 1 // 无障碍服务实时监听（备用）
+
+    /** 采集模式，默认使用新的低功耗模式 */
+    var collectMode: Int
+        get() = sp.getInt("collect_mode", MODE_USAGE)
+        set(value) = sp.edit().putInt("collect_mode", value).apply()
+
+    /** 拉取多少天的历史使用记录 */
+    var importDays: Int
+        get() = sp.getInt("import_days", 3)
+        set(value) = sp.edit().putInt("import_days", value).apply()
+
+    /** 上次同步时间戳 */
+    var lastSyncMs: Long
+        get() = sp.getLong("last_sync_ms", 0L)
+        set(value) = sp.edit().putLong("last_sync_ms", value).apply()
+
+    /** 上次同步到的记录条数 */
+    var importedCount: Int
+        get() = sp.getInt("imported_count", 0)
+        set(value) = sp.edit().putInt("imported_count", value).apply()
 }
