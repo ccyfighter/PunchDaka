@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +26,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -50,33 +52,38 @@ private val AVATAR_COLORS = listOf(
     Color(0xFFF59E0B), Color(0xFFEC4899), Color(0xFF14B8A6)
 )
 
+/** 少于这个数量就认为"被系统挡住了"，给出提示 */
+private const val TOO_FEW_THRESHOLD = 20
+
 @Composable
 fun AppsScreen() {
     val context = LocalContext.current
-    var allApps by remember { mutableStateOf(emptyList<AppInfos.Entry>()) }
+    var snapshot by remember { mutableStateOf(AppInfos.Snapshot(emptyList(), 0, 0, 0, 0)) }
     var selected by remember { mutableStateOf(setOf<String>()) }
     var query by remember { mutableStateOf("") }
     var showSystem by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
     var refreshKey by remember { mutableIntStateOf(0) }
+    var showAdd by remember { mutableStateOf(false) }
+    var newPkg by remember { mutableStateOf("") }
+    var addError by remember { mutableStateOf("") }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(refreshKey) {
         loading = true
-        val list = withContext(Dispatchers.IO) { AppInfos.launchableApps(context) }
-        allApps = list
+        val current = withContext(Dispatchers.IO) { Repository.monitoredPackages() }
+        selected = current
+        val snap = withContext(Dispatchers.IO) { AppInfos.allApps(context, current) }
+        snapshot = snap
         loading = false
     }
 
-    LaunchedEffect(refreshKey) {
-        val set = withContext(Dispatchers.IO) { Repository.monitoredPackages() }
-        selected = set
-    }
-
+    // 从系统设置授权回来，自动重读一次列表
     LifecycleResumeEffect(Unit) {
         refreshKey++
         onPauseOrDispose { }
     }
 
+    val allApps = snapshot.apps
     val filtered = allApps.filter { entry ->
         (showSystem || !entry.isSystem) &&
                 (query.isBlank() ||
@@ -98,11 +105,49 @@ fun AppsScreen() {
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "已选 ${selected.size} 个 · 只统计打开的时长，不会读取任何内容",
+            text = "已选 ${selected.size} 个 · 共读到 ${allApps.size} 个应用" +
+                    "（桌面 ${snapshot.launcherCount} / 已装 ${snapshot.installedCount} / " +
+                    "使用记录 ${snapshot.usageCount}）",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+
+        if (!loading && allApps.size < TOO_FEW_THRESHOLD) {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = "只读到 ${allApps.size} 个应用，明显偏少",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "小米在原生「软件包可见性」之外还加了一层「获取应用列表」权限，" +
+                                "被拒绝时只能读到极少应用。请点下面的按钮，把「获取应用列表 / " +
+                                "读取已安装应用」设为始终允许；没有这个选项的话，用「手动添加包名」也能选到。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { AppInfos.openPermissionEditor(context) }) {
+                            Text("打开权限设置")
+                        }
+                        TextButton(onClick = { refreshKey++ }) {
+                            Text("重新读取")
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
 
         OutlinedTextField(
             value = query,
@@ -120,7 +165,7 @@ fun AppsScreen() {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
+                .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -130,6 +175,17 @@ fun AppsScreen() {
                 modifier = Modifier.weight(1f)
             )
             Switch(checked = showSystem, onCheckedChange = { showSystem = it })
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { showAdd = true }) { Text("手动添加包名") }
+            TextButton(onClick = { refreshKey++ }) { Text("刷新列表") }
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = "当前 ${filtered.size} 项",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         if (loading) {
@@ -162,6 +218,62 @@ fun AppsScreen() {
                 }
             }
         }
+    }
+
+    if (showAdd) {
+        AlertDialog(
+            onDismissRequest = { showAdd = false },
+            title = { Text("手动添加包名") },
+            text = {
+                Column {
+                    Text(
+                        text = "列表里找不到的应用，可以直接填包名。常用示例：\n" +
+                                "哔哩哔哩 tv.danmaku.bili\n" +
+                                "王者荣耀 com.tencent.tmgp.sgame\n" +
+                                "明日方舟 com.hypergryph.arknights",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = newPkg,
+                        onValueChange = { newPkg = it; addError = "" },
+                        placeholder = { Text("例如 tv.danmaku.bili") },
+                        singleLine = true,
+                        isError = addError.isNotEmpty(),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (addError.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = addError,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val pkg = newPkg.trim()
+                    if (!pkg.contains(".") || pkg.contains(" ")) {
+                        addError = "包名格式不对，应类似 com.xxx.yyy"
+                    } else {
+                        val lab = AppInfos.label(context, pkg)
+                        Repository.setMonitored(pkg, lab, true)
+                        selected = selected + pkg
+                        newPkg = ""
+                        addError = ""
+                        showAdd = false
+                        refreshKey++
+                    }
+                }) { Text("添加") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAdd = false; addError = "" }) { Text("取消") }
+            }
+        )
     }
 }
 
