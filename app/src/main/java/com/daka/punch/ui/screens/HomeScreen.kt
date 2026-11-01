@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -61,7 +62,10 @@ import com.daka.punch.data.Repository
 import com.daka.punch.data.UsageSession
 import com.daka.punch.util.AppInfos
 import com.daka.punch.util.TimeUtils
+import com.daka.punch.util.UsageCollector
+import com.daka.punch.util.UsageSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 private val AVATAR_COLORS = listOf(
@@ -79,10 +83,13 @@ fun HomeScreen() {
     var refreshKey by remember { mutableIntStateOf(0) }
     var expandedPkg by remember { mutableStateOf<String?>(null) }
     val details = remember { mutableStateListOf<UsageSession>() }
+    var tick by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(day, refreshKey) {
+    LaunchedEffect(day, refreshKey, tick) {
         val d = day
         val result = withContext(Dispatchers.IO) {
+            // 先从系统同步一次使用记录（内部有 20 秒节流，不会频繁查询）
+            if (UsageCollector.usingUsageMode()) UsageCollector.syncIfNeeded(context)
             Triple(
                 Repository.dayStats(d),
                 Repository.daySummary(d),
@@ -92,6 +99,14 @@ fun HomeScreen() {
         stats = result.first
         summary = result.second
         hourly = result.third
+    }
+
+    // 界面停留期间每 15 秒自动刷新，保证看到的数字一直是最新的
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(15_000L)
+            tick++
+        }
     }
 
     // 每次回到前台刷新（统计服务在后台持续写入）
@@ -129,11 +144,7 @@ fun HomeScreen() {
             )
         }
 
-        item {
-            if (!Prefs.serviceConnected) {
-                ServiceWarning()
-            }
-        }
+        item { CollectSourceCard() }
 
         item { SummaryCard(summary) }
 
@@ -538,5 +549,85 @@ private fun reasonText(reason: String): String = when (reason) {
     "SERVICE_RESTART" -> "服务重启"
     "SERVICE_STOP" -> "服务停止"
     "REBOOT" -> "关机/重启"
+    "PAUSED" -> "离开前台"
+    "ONGOING" -> "正在使用"
+    "SWITCH" -> "切换应用"
     else -> "切换应用"
+}
+
+/** 数据来源状态卡片：未授权时给出小米机型的设置路径引导 */
+@Composable
+private fun CollectSourceCard() {
+    val context = LocalContext.current
+    val usageMode = UsageCollector.usingUsageMode()
+    val lastSync = Prefs.lastSyncMs
+    val granted = remember(lastSync) { UsageSource.appOpsAllowed(context) }
+    val needAuth = usageMode && !granted
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (needAuth) MaterialTheme.colorScheme.errorContainer
+            else MaterialTheme.colorScheme.surfaceVariant
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (needAuth) Icons.Default.Warning
+                    else Icons.Default.ChevronRight,
+                    tint = if (needAuth) MaterialTheme.colorScheme.onErrorContainer
+                    else MaterialTheme.colorScheme.primary,
+                    contentDescription = null
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (needAuth) "需要授权：使用情况访问"
+                    else if (usageMode) "数据来源：系统使用记录"
+                    else "数据来源：无障碍服务",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (needAuth) MaterialTheme.colorScheme.onErrorContainer
+                    else MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (needAuth) {
+                Text(
+                    text = "新版本不用常驻后台：系统在自己记录每个应用的打开与离开，" +
+                        "打开本 App 时取回来即可。\n\n" +
+                        "小米 / 澎湃 OS 开启路径：\n" +
+                        "设置 → 搜索「使用情况访问」（或 隐私保护 → 特殊权限设置 → 使用情况访问）" +
+                        "→ 找到「打卡」→ 打开开关。\n\n" +
+                        "若搜不到该项，说明当前系统不允许第三方读取，请改用无障碍模式。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Button(onClick = { UsageSource.openUsageAccessSettings(context) }) {
+                    Text("去开启")
+                }
+            } else {
+                Text(
+                    text = buildString {
+                        append(
+                            if (usageMode) "打开界面自动同步，App 后台不运行、不轮询、不耗电。"
+                            else "无障碍模式：App 需在后台常驻，被系统清理时会漏记。"
+                        )
+                        if (lastSync > 0L) {
+                            append("\n最后同步 ")
+                            append(TimeUtils.formatClockSec(lastSync))
+                            append("，共 ")
+                            append(Prefs.importedCount)
+                            append(" 条记录")
+                        }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
 }
